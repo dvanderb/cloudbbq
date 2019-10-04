@@ -1,17 +1,14 @@
-var noble = require('noble')
-var constHelper = require('./constHelper')
-var tempHelper = require('./tempHelper')
-var mqtt = require('mqtt')
-var config = require('config')
-var program = require('commander')
-var path = require('path')
-var GoogleAssistant = require('google-assistant')
+const noble = require('noble')
+const constHelper = require('./constHelper')
+const tempHelper = require('./tempHelper')
+const mqtt = require('mqtt')
+const config = require('config')
+const program = require('commander')
 
-var mqttConfig = config.get('mqtt')
-var notificationConfig = config.get('notifications')
+const mqttConfig = config.get('mqtt')
 
-var mqttConnected = false
-var msgCount = 0
+let mqttConnected = false
+let msgCount = 0
 
 program
     .version('1.1.0')
@@ -23,27 +20,9 @@ program
     .option('-p7, --probe6 <n>','Probe 6 Target Temperature(F)',parseInt)
     .parse(process.argv)
 
-notificationConfig.targets = [
-    program.probe1,
-    program.probe2,
-    program.probe3,
-    program.probe4,
-    program.probe5,
-    program.probe6]
-notificationConfig.set = [true,true,true,true,true,true]
-
-const googleConfig = {
-    auth: {
-        keyFilePath: path.resolve(__dirname,notificationConfig.googleAssistant.oAuthSecretsFile),
-        // where you want the tokens to be saved
-        // will create the directory if not already there
-        savedTokensPath: path.resolve(__dirname, 'config/tokens.json'),
-    }
-}
-const assistant = new GoogleAssistant(googleConfig.auth)
-
-var mqttConnString = `${mqttConfig.protocol}://${mqttConfig.username}:${mqttConfig.key}@${mqttConfig.url}`
-var client = mqtt.connect(mqttConnString)
+const authString = mqttConfig.username !== '' ? `${mqttConfig.username}:${mqttConfig.key}@` : '';
+const mqttConnString = `${mqttConfig.protocol}://${authString}${mqttConfig.url}`
+const client = mqtt.connect(mqttConnString)
 
 client.on('connect',()=>{
     mqttConnected = true
@@ -51,10 +30,10 @@ client.on('connect',()=>{
 
 noble.startScanning()
 
-var pairCharacteristic, tempCharacteristic, commandCharacteristic
-
+let pairCharacteristic, tempCharacteristic, commandCharacteristic
+let foundPeripheral;
 noble.on('discover',(peripheral)=>{
-
+    foundPeripheral = peripheral;
     // Check out this sample code: https://github.com/noble/noble/issues/179
     if (peripheral.advertisement.localName === 'iBBQ'){
         console.log('iBBQ Discovered')
@@ -62,6 +41,15 @@ noble.on('discover',(peripheral)=>{
 
         peripheral.on('disconnect', () => {
             console.log('Lost connection to device.')
+
+            if (mqttConnected) {
+                for (let j = 0; j < 6; j++){
+                    client.publish(mqttConfig.topics[j],JSON.stringify({
+                        value:0, last_updated: Math.floor(Date.now() / 1000)
+                    }));
+                }
+            }
+
             noble.startScanning()
         })
 
@@ -79,11 +67,13 @@ noble.on('discover',(peripheral)=>{
 
 
 function connectToIBBQ(peripheral) {
+    console.log(`Connecting to device`)
     peripheral.discoverAllServicesAndCharacteristics((error,services,characteristics)=>{
         if(error){
             console.error(error)
         }
         else{
+            console.log(`Got ${characteristics.length} charateristics..`);
             for (let characteristic of characteristics){
                 switch(characteristic.uuid){
                 case 'fff2':
@@ -104,11 +94,20 @@ function connectToIBBQ(peripheral) {
 }
 
 function pairToDevice() {
+    console.log(`Pairing to device`);
+    let connected = false;
+    setTimeout(() => {
+        if (! connected && foundPeripheral) {
+            console.log(`Pairing timed out`);
+            process.exit(1);
+        }
+    }, 5000);
     pairCharacteristic.write(constHelper.autoPairKey(),true, (error)=>{
         if (error){
             console.error(error)
         }
         else {
+            connected = true;
             console.log('paired')
             subscribeToEvents()
         }
@@ -116,6 +115,7 @@ function pairToDevice() {
 }
 
 function subscribeToEvents() {
+    console.log(`Subscribing to events`)
     tempCharacteristic.subscribe((error)=>{
         if (error) {
             console.error(error)
@@ -132,37 +132,27 @@ function subscribeToEvents() {
 
 function handleTempEvent(data) {
     if (data && data.length == 12){
-        var probeTemps = []
-        for (var i = 0; i< 6; i++) {
-            var rawTemp = data.readInt16LE(i*2)
+        const probeTemps = []
+        for (let i = 0; i< 6; i++) {
+            const rawTemp = data.readInt16LE(i*2)
             if (rawTemp != -10) {
                 probeTemps.push(tempHelper.cToF(rawTemp/10))
             }
             else {
-                probeTemps.push(null)
+                probeTemps.push(0)
             }
-            
+
         }
         console.log(`Probes 1: ${probeTemps[0]}F 2: ${probeTemps[1]}F 3: ${probeTemps[2]}F `+
             `4: ${probeTemps[3]}F 5: ${probeTemps[4]}F 5: ${probeTemps[5]}F`)
         if (mqttConnected){
             msgCount++
-            for (var j = 0; j < 6; j++){
+            for (let j = 0; j < 6; j++){
                 if(msgCount % mqttConfig.probeMessagePerPublish == 0 && probeTemps[j] != null) {
                     client.publish(mqttConfig.topics[j],JSON.stringify({
-                        value:probeTemps[j]
-                    }))
-                }
-            }            
-        }
-
-        if (notificationConfig.googleAssistant.enabled){
-            for (var k = 0; k < 6; k++){
-                if (notificationConfig.set[k] && notificationConfig.targets[k]) {
-                    if(probeTemps[k]>notificationConfig.targets[k]) {
-                        notificationConfig.set[k] = false
-                        sendGoogleNotification(k+1,probeTemps[k])
-                    }
+                        value: probeTemps[j],
+                        last_updated: Math.floor(Date.now() / 1000),
+                    }));
                 }
             }
         }
@@ -170,8 +160,4 @@ function handleTempEvent(data) {
     else {
         console.error('wierd empty or wrong size buffer')
     }
-}
-
-function sendGoogleNotification(probe,temp) {
-    assistant.start({'textQuery':`broadcast Probe ${probe} has reached ${temp} degrees fahrenheit.`})
 }
