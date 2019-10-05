@@ -6,10 +6,14 @@ This code should run on MacOS or Linux.   Ideally you could run this on a Raspbe
 This code will also likely work with other similar Bluetooth probes that show up with the bluetooth device name "iBBQ", but may require a different pairing key.  See `autoPairKey` in `constHelper.js`.
 
 ## Using Cloud BBQ
+* Note: Use Node 8 and not Node 10 due to compatibility with node-xpc-connection
 * After cloning, run `npm install` or `yarn install`
-* Edit `/config/default.json` or create a new file `/config/development.json` with your MQTT information.
-Tested with [Adafruit IO](https://io.adafruit.com)
-* Start with `npm start` or `yarn start`.  You may need to use `sudo` depending on your OS.
+* Edit `/config/default.json` with your MQTT information.
+Tested with [Adafruit IO](https://io.adafruit.com) and local mqtt broker [Mosquitto](https://mosquitto.org/)
+* Start with `node app.js`.  You may need to use `sudo` depending on your OS.
+* Application will exit non-zero when there is an issue pairing with the device since it is easiest
+to let the app die and restart to try to pair again.  You may want to use a process
+manager like `forever` or as `systemctl` service to automatically restart the process.
 
 ### MacOS
 Xcode is required for Noble's node-gyp compilation.
