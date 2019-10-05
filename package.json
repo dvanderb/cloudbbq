@@ -9,10 +9,11 @@
   },
   "author": "Greg Leeds",
   "license": "MIT",
-  "engines" : { "node" : ">=8 <9" },
+  "engines": {
+    "node": ">=8 <9"
+  },
   "dependencies": {
     "bluetooth-hci-socket": "^0.5.1",
-    "commander": "^2.20.0",
     "config": "^2.0.1",
     "mqtt": "^2.18.3",
     "noble": "^1.9.1"

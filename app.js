@@ -3,22 +3,11 @@ const constHelper = require('./constHelper')
 const tempHelper = require('./tempHelper')
 const mqtt = require('mqtt')
 const config = require('config')
-const program = require('commander')
 
 const mqttConfig = config.get('mqtt')
 
 let mqttConnected = false
 let msgCount = 0
-
-program
-    .version('1.1.0')
-    .option('-p1, --probe1 <n>','Probe 1 Target Temperature(F)',parseInt)
-    .option('-p2, --probe2 <n>','Probe 2 Target Temperature(F)',parseInt)
-    .option('-p3, --probe3 <n>','Probe 3 Target Temperature(F)',parseInt)
-    .option('-p4, --probe4 <n>','Probe 4 Target Temperature(F)',parseInt)
-    .option('-p6, --probe5 <n>','Probe 5 Target Temperature(F)',parseInt)
-    .option('-p7, --probe6 <n>','Probe 6 Target Temperature(F)',parseInt)
-    .parse(process.argv)
 
 const authString = mqttConfig.username !== '' ? `${mqttConfig.username}:${mqttConfig.key}@` : '';
 const mqttConnString = `${mqttConfig.protocol}://${authString}${mqttConfig.url}`
